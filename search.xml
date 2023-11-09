@@ -168,9 +168,8 @@ malloc 和 free。</p>
 <li><strong>外部碎片</strong>：指的是空闲的小块内存区域，由于这些内存空间不连续，以至于合计的内存足够，但是不能满足一些内存分配的需求。</li>
 <li><strong>内部碎片</strong>：指的是由于一些对齐的需求，导致分配出去的空间中一些内存无法被充分利用。</li>
 </ul>
-<blockquote>
-<p>内存池尝试解决的是外部碎片的问题，同时也尽可能的减少内部碎片的产生。</p>
-</blockquote>
+<div class="note info"><p>内存池尝试解决的是外部碎片的问题，同时也尽可能的减少内部碎片的产生。</p>
+</div>
 <p>该内存池的整体架构如下图所示：</p>
 <p><img data-src="/images/apollo/memory_pool_structure.png" width="50%" height="50%"/></p>
 <p>其主要由以下三个部分组成：</p>
@@ -530,7 +529,6 @@ class="math inline">\(2^5\times 4=2^7\)</span> Bytes
 </table>
 <p>多线程性能测试结果的折线图如下所示：</p>
 <p><img data-src="/images/apollo/performance_test_mt.png"/></p>
-<hr />
 <p>综合对比上面的测试数据，可以看出，当申请的内存次数较小时，使用系统原生的
 API 更为合适，而如果申请次数过多时，内存池的优势就逐渐体现出来了。</p>
 <h1 id="网络通信模块">网络通信模块</h1>
