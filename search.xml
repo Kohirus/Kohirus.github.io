@@ -348,7 +348,7 @@ href="https://github.com/protocolbuffers/protobuf">protobuf</a> 和 <a
 href="https://zookeeper.apache.org/">Zookeeper</a>
 来作为分布式协调服务；</li>
 </ul>
-<div class="text-center">
+<div class="text-center" style="text-align:center">
 <a class="btn" href="https://github.com/Kohirus/Apollo" title="GitHub"><i class="fab fa-github fa-fw fa-lg"></i>Github-Apollo</a>
 </div>
 <h1 id="项目部署">项目部署</h1>
@@ -1115,6 +1115,339 @@ zookeeper_init
         <tag>网络通信</tag>
         <tag>Zookeeper</tag>
         <tag>protobuf</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>MySQL锁机制</title>
+    <url>/2022/12/22/MySQL%E9%94%81%E6%9C%BA%E5%88%B6/</url>
+    <content><![CDATA[<blockquote class="blockquote-center">
+<p>MySQL锁机制探究</p>
+
+</blockquote>
+<h1 id="表级锁行级锁">1.表级锁&amp;行级锁</h1>
+<p>数据库中的锁通常分为两种：</p>
+<ul>
+<li><strong>表级锁</strong>：对整张表加锁。开销小，加锁快，不会出现死锁。但是锁的粒度大，发生锁冲突的概率高，并发度低。</li>
+<li><strong>行级锁</strong>：对某行记录加锁。开销大，加锁慢，会出现死锁。但是锁的粒度小，发生锁冲突的概率低，并发度高。</li>
+</ul>
+<h1 id="排它锁共享锁">2.排它锁&amp;共享锁</h1>
+<ul>
+<li><strong>排它锁</strong>(<code>Exclusive</code>)：又称为 X
+锁，写锁；</li>
+<li><strong>共享锁</strong>(<code>Shared</code>)：又称为 S
+锁，读锁；</li>
+</ul>
+<p>X 锁和 S 锁之间具有如下关系：S-S 之间可以兼容，但是 X-S、S-X、X-X
+之间是互斥的。</p>
+<ul>
+<li>一个事务对数据对象 O 加了 S 锁，可以对 O
+进行读取操作但不能对其进行更新操作。加锁期间其它事务能对 O 加 S
+锁但不能加 X 锁；</li>
+<li>一个事务对数据对象 O 加了 X 锁，可以对 O
+进行读取和更新。加锁期间其它事务不能对 O 加任何锁。</li>
+</ul>
+<p>可以通过 <code>SELECT ... LOCK IN SHARE MODE</code>
+强制获取共享锁，通过 <code>SELECT ... FOR UPDATE</code> 获取排它锁。</p>
+<h1 id="innodb行级锁">3.InnoDB行级锁</h1>
+<h2 id="行级锁">行级锁</h2>
+<p>InnoDB
+存储引擎支持事务处理，表支持行级锁定，并发能力更好。使用的过程中应该注意以下
+3 点：</p>
+<ol type="1">
+<li>InnoDB
+行锁是通过<strong>给索引上的索引项加锁来实现的，而不是给表的行记录加锁实现的</strong>，这就意味着只有通过索引条件检索数据，InnoDB
+才使用行级锁，否则 InnoDB 将使用表锁。</li>
+<li>由于 InnoDB
+的行锁实现是针对索引字段添加的锁，不是针对行记录加的锁，因此虽然访问的是
+InnoDB
+引擎下表的不同行，但是如果使用相同的索引字段作为过滤条件，依然会发生锁冲突，只能串行进行，不能并发进行。</li>
+<li>即使 SQL 中使用了索引，但是经过 MySQL
+的优化器后，如果认为全表扫描比使用索引效率更高，此时会放弃使用索引，因此也不会使用行锁，而是使用表锁，比如对一些很小的表，MySQL
+就不会去使用索引。</li>
+</ol>
+<div class="note danger"><p>注意，如果过滤条件使用的是辅助索引，那么它会通过辅助索引树回表到主键索引树，来查找到该行内容以获取行锁。</p>
+</div>
+<h2 id="间隙锁">间隙锁</h2>
+<p>当我们用范围条件而不是相等条件检索数据，并请求共享或排他锁时，InnoDB
+会给符合条件的已有数据记录的索引项加锁；对于键值在条件范围内但并不存在的记录，叫做
+"<strong>间隙(GAP)</strong>"，InnoDB 也会对这个 "间隙"
+加锁，这种锁机制就是所谓的【间隙锁】。</p>
+<p>举例来说， 假如 user 表中只有 101 条记录， 其 userid 的值分别是
+1,2,...,100,101，对于下面的 SQL：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM user WHERE userid &gt; 100 FOR UPDATE;</span><br></pre></td></tr></table></figure>
+<p>它是一个范围条件的检索，InnoDB 不仅会对符合条件的 userid 值为 101
+的记录加锁，也会对 userid 大于 101（但是这些记录并不存在）的 "间隙"
+加锁，以防止其它事务在表的末尾增加数据。</p>
+<p>InnoDB
+使用间隙锁的目的，为了防止【幻读】，<strong>以满足串行化隔离级别的要求</strong>，对于上面的例子，要是不使用间隙锁，如果其他事务插入了
+userid 大于 100
+的任何记录，那么本事务如果再次执行上述语句，就会发生幻读。</p>
+<p>现在有这样一张数据表，其中 uid 为自增的主键字段，同时 age
+字段为辅助索引：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">mysql&gt; select * from student;</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">| uid | name        | age | sex |</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">|   1 | zhangsan    |  18 | M   |</span><br><span class="line">|   2 | gaoyang     |  20 | W   |</span><br><span class="line">|   3 | chenwei     |  22 | M   |</span><br><span class="line">|   4 | linfeng     |  21 | W   |</span><br><span class="line">|   5 | liuxiang    |  19 | W   |</span><br><span class="line">|   6 | niuer       |  17 | M   |</span><br><span class="line">|   7 | liuxiaohong |  28 | W   |</span><br><span class="line">|   8 | gaolishi    |  37 | M   |</span><br><span class="line">|   9 | yuanwei     |  13 | W   |</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">9 rows in set (0.26 sec)</span><br></pre></td></tr></table></figure>
+<p>那么辅助索引树的叶子节点所在层结构大致如下：</p>
+<p><img data-src="/images/MySQL_Lock/leaf_node.png" style="zoom:50%"/></p>
+<p>如果现在在事务中使用如下 SQL 语句：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE age&gt;21;</span><br></pre></td></tr></table></figure>
+<p>那么间隙锁的情况如下图所示：</p>
+<p><img data-src="/images/MySQL_Lock/gap_lock_1.png" style="zoom:50%"/></p>
+<p>由于在辅助索引树中，如果辅助索引相同，那么会按照主键索引按照升序进行排列，因此如果现在在事务中插入一个新的记录，其
+age 字段为 21，那么其主键字段会大于 4，则会插入到间隙锁 1
+所在位置，但是由于间隙锁 1 的存在，则会导致插入失败。而如果插入的 age
+字段值为 19，则会插入成功。</p>
+<p>如果使用的是等值查询：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE age=28;</span><br></pre></td></tr></table></figure>
+<p>那么其间隙锁情况如下：</p>
+<p><img data-src="/images/MySQL_Lock/gap_lock_2.png" style="zoom:50%"/></p>
+<p>此时，插入【22, 36】之间的值都会被阻塞。</p>
+<h2 id="意向共享锁意向排它锁">意向共享锁&amp;意向排它锁</h2>
+<p>如果要获取一张表的共享锁 S 或者排它锁
+X，首先需要确定这张表没有被其它事务获取或 X
+锁。但是如果表中的数据过多，遍历所有数据来查看是否存在某行数据或者获取过行锁
+X 锁或者整张表存在表锁 X
+锁，效率就会下降，为了提高效率，因此便有了如下的两把锁：</p>
+<ul>
+<li><strong>意向共享锁(IS锁)</strong>：事务计划给记录加行共享锁，事务在给一行记录加共享锁前，必须先取得该表的
+IS 锁。</li>
+<li><strong>意向排他锁(IX锁)</strong>：事务计划给记录加行排他锁，事务在给一行记录加排他锁前，必须先取得该表的
+IX 锁。</li>
+</ul>
+<p>X、S、IS 锁和 IX 锁之间的兼容性如下：</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"></th>
+<th style="text-align: center;">X</th>
+<th style="text-align: center;">IX</th>
+<th style="text-align: center;">S</th>
+<th style="text-align: center;">IS</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;"><strong>X</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>IX</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✔️</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><strong>S</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">✔️</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><strong>IS</strong></td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">✔️</td>
+<td style="text-align: center;">✔️</td>
+</tr>
+</tbody>
+</table>
+<div class="note danger"><blockquote>
+<p>表格中的X和S指的是表锁，不是行锁！！！</p>
+</blockquote>
+</div>
+<p>注意：</p>
+<ol type="1">
+<li>意向锁是由 InnoDB 存储引擎获取行锁之前自己获取的;</li>
+<li>意向锁之间都是兼容的，不会产生冲突;</li>
+<li>意向锁存在的意义是为了更高效的获取表锁;</li>
+<li>意向锁是表级锁，协调表锁和行锁的共存关系。主要目的是显示事务正在锁定某行或者试图锁定某行;</li>
+</ol>
+<h1 id="innodb表级锁">4.InnoDB表级锁</h1>
+<p>在绝大部分情况下都应该使用行锁，因为事务和行锁往往是选择 InnoDB
+的理由，但个别情况下也使用表级锁；</p>
+<ol type="1">
+<li>事务需要更新大部分或全部数据，表又比较大，如果使用默认的行锁，不仅这个事务执行效率低，而且可能造成其他事务长时间等待和锁冲突；</li>
+<li>事务涉及多个表，比较复杂，很可能引起死锁，造成大量事务回滚。</li>
+</ol>
+<p>常用的相关命令如下：</p>
+<ul>
+<li><code>LOCK TABLE user READ</code>: 读锁锁表</li>
+<li><code>LOCK TABLE user WRITE</code>: 写锁锁表</li>
+<li><code>COMMIT/ROLLBACK</code>: 事务提交或者回滚</li>
+<li><code>UNLOCK TABLES</code>:
+本身自带提交事务，释放线程占用的所有表锁</li>
+</ul>
+<h1 id="死锁">5.死锁</h1>
+<p>MyISAM 表锁是 <code>deadlock free</code> 的， 这是因为 MyISAM
+总是一次获得所需的全部锁，要么全部满足，要么等待，因此不会出现死锁。但在
+InnoDB 中，除单个 SQL
+组成的事务外，锁是逐步获得的，即锁的粒度比较小，这就决定了在 InnoDB
+中发生死锁是可能的。</p>
+<p>死锁问题一般都是我们自己的应用造成的，和多线程编程的死锁情况相似，大部分都是由于我们多个线程在获取多个锁资源的时候，获取的顺序不同而导致的死锁问题。因此我们应用在对数据库的多个表做更新的时候，不同的代码段，应对这些表按相同的顺序进行更新操作，以防止锁冲突导致死锁问题。</p>
+<h1 id="锁优化">6.锁优化</h1>
+<ol type="1">
+<li>尽量使用较低的隔离级别;</li>
+<li>设计合理的索引并尽量使用索引访问数据，使加锁更加准确，减少锁冲突的机会提高并发能力;</li>
+<li>选择合理的事务大小，小事务发生锁冲突的概率小;</li>
+<li>不同的程序访问一组表时，应尽量约定以相同的顺序访问各表，对一个表而言，尽可能以固定的顺序存取表中的行。这样可以大大减少死锁的机会;</li>
+<li>尽量用相等条件访问数据，这样可以避免间隙锁对并发插入的影响;</li>
+<li>不要申请超过实际需要的锁级别;</li>
+<li>除非必须，查询时不要显示加锁;</li>
+</ol>
+<h1 id="mvcc多版本并发控制">7.MVCC多版本并发控制</h1>
+<p>MVCC
+是<strong>多版本并发控制</strong>(<code>Multi-Version Concurrency Control</code>，简称
+MVCC)，是 MySQL
+中基于乐观锁理论实现隔离级别的方式，用于实现<strong>已提交读</strong>和<strong>可重复读</strong>隔离级别的实现，也经常称为多版本数据库。</p>
+<p>MVCC
+机制会生成一个数据请求时间点的一致性数据快照(<code>Snapshot</code>)，并用这个快照来提供一定级别(语句级或事务级)的一致性读取。从用户的角度来看，好像是数据库可以提供同一数据的多个版本(系统版本号和事务版本号)。</p>
+<p>在 MVCC 多版本并发控制中，读操作可以分为两类：</p>
+<ol type="1">
+<li><strong>快照读</strong>(snapshot read):
+读的是记录的可见版本，不用加锁。如 select;</li>
+<li><strong>当前读</strong>(current read):
+读取的是记录的最新版本，并且当前读返回的记录。如
+insert，delete，update，select...lock in share, mode/for update</li>
+</ol>
+<p>MVCC
+中的每一行记录实际上有多个版本，每个版本的记录除了数据本身之外，还增加了其它字段，比如：</p>
+<ul>
+<li><code>DB_TRX_ID</code>：用于记录当前事务ID</li>
+<li><code>DB_ROLL_PTR</code>：指向 undo log 日志上数据的指针</li>
+</ul>
+<p>MVCC 对于已提交读和可重复读的不同点在于：</p>
+<ul>
+<li><strong>已提交读</strong>：每次执行语句的时候都重新生成一次快照(Read
+View)，即每次 select 查询时。</li>
+<li><strong>可重复读</strong>：同一个事务开始的时候生成一个当前事务全局性的快照(Read
+View)，即第一次select查询时。</li>
+</ul>
+<p>快照内容的读取原则如下：</p>
+<ul>
+<li>版本未提交无法读取生成快照；</li>
+<li>版本已提交，但是在快照创建后提交的，无法读取；</li>
+<li>版本已提交，但是在快照创建前提交的，可以读取；</li>
+<li>当前事务内自己的更新，可以读到；</li>
+</ul>
+<h1 id="myisam表级锁">8.MyISAM表级锁</h1>
+<p>MyISAM存储引擎不支持事务处理，因此它的并发比较简单，只支持到表锁的粒度，粒度比较大，并发能力一般，但不会引起死锁的问题，它支持表级共享的读锁和互斥的写锁。</p>
+<p>对 MyISAM
+表的读操作（共享锁），不会阻塞其他用户对同一表的读请求，但会阻塞对同一表的写请求；对
+MyISAM
+表的写操作（排它锁），则会阻塞其他用户对同一表的读和写操作。MyISAM
+表的读操作与写操作之间，以及写操作之间是串行的。MyISAM
+在执行查询语句（SELECT）前，会自动给涉及的所有表加读锁，在执行更新操作（UPDATE、DELETE、INSERT
+等）前，会自动给涉及的表加写锁，这个过程并不需要用户控制，是 MySQL
+Server 端自动完成的。</p>
+<p>在 MyISAM
+存储引擎下，多个线程并发操作时，线程1试图获取读锁，线程2获取写锁，一般
+MyISAM
+认为写操作要比读操作重要，因此线程2几乎都会优先获取写锁，写操作完成后，线程1才会获取读锁。即使线程1的读锁请求先到达，线程2的写锁请求后到达，那么线程2写锁的获取也会排在线程1读锁的前面。</p>
+<p>因此，MyISAM
+存储引擎不适合大量的更新操作和查询操作，因为查询操作获取读锁的优先级比较低，会导致客户端查询获取结果的过程很慢。当然
+MySQL 提供了很多参数设置，可以调整读锁的获取优先级。</p>
+]]></content>
+      <categories>
+        <category>数据库</category>
+      </categories>
+      <tags>
+        <tag>MySQL</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>MySQL日志</title>
+    <url>/2022/12/22/MySQL%E6%97%A5%E5%BF%97/</url>
+    <content><![CDATA[<blockquote class="blockquote-center">
+<p>MySQL日志机制探究</p>
+
+</blockquote>
+<h1 id="错误日志">1.错误日志</h1>
+<p>错误日志是 MySQL 中最重要的日志之一，它记录了当 mysqld
+启动和停止时，以及服务器在运行过程中发生任何严重错误时的相关信息。当数据库出现任何故障导致无法正常使用时，可以首先查看此日志。</p>
+<p>mysqld 使用错误日志名 host_name.err 并默认在参数
+DATADIR(数据目录)指定的目录中写入日志文件。</p>
+<div class="note info"><p>host_name 为主机名。</p>
+</div>
+<h1 id="二进制日志">2.二进制日志</h1>
+<p>二进制日志(BINLOG) 记录了所有的 DDL(数据定义语言)语句和
+DML(数据操纵语言) 语句，但是不包括数据查询语句。语句以 “事件”
+的形式保存，它描述了数据的更改过程。
+此日志对于灾难时的数据恢复起着极其重要的作用。</p>
+<p>它两个重要的应用场景：主从复制、数据恢复。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">// 查看binlog</span><br><span class="line">show binary logs;</span><br></pre></td></tr></table></figure>
+<p>通过 MySQL 自带的 <code>mysqlbinlog</code> 工具可以快速解析大量的
+binlog 日志文件，如：</p>
+<figure class="highlight shell"><table><tr><td class="code"><pre><span class="line">mysqlbinlog --no-defaults --database=school --base64-output=decode-rows</span><br><span class="line">-v --start-datetime=&#x27;2021-05-01 00:00:00&#x27; --stop-datetime=&#x27;2021-05-10 00:00:00&#x27;</span><br><span class="line">mysql-bin.000001 | more</span><br></pre></td></tr></table></figure>
+<h1 id="查询日志">3.查询日志</h1>
+<p>查询日志记录了客户端的所有语句。由于上线项目 SQL
+语句特别多，开启查询日志 IO 太多导致 MySQL
+效率低，只有在调试时才开启，比如通过查看 SQL
+语句发现热点数据进行缓存。</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">show global variables like &quot;%genera%&quot;;</span><br></pre></td></tr></table></figure>
+<h1 id="慢查询日志">4.慢查询日志</h1>
+<p>MySQL 可以设置慢查询日志，当 SQL
+执行的时间超过我们设定的时间，那么这些 SQL
+就会被记录在慢查询日志当中，然后我们通过查看日志，用
+<code>explain</code> 分析这些 SQL
+的执行计划，来判定为什么效率低下，是没有使用到索引？还是索引本身创建的有问题？或者是索引使用到了，但是由于表的数据量太大，花费的时间就是很长，那么此时我们可以把表分成
+n 个小表，比如订单表按年份分成多个小表等。</p>
+<p>慢查询日志的相关参数如下所示：</p>
+<figure class="highlight asciidoc"><table><tr><td class="code"><pre><span class="line"><span class="section">mysql&gt; show variables like &#x27;%slow_query%&#x27;;</span></span><br><span class="line"><span class="section">+---------------------+--------------------------------------------+</span></span><br><span class="line"><span class="section">| Variable_name       | Value                                      |</span></span><br><span class="line"><span class="section">+---------------------+--------------------------------------------+</span></span><br><span class="line">| slow<span class="emphasis">_query_log      | OFF                                        |</span></span><br><span class="line"><span class="emphasis">| slow_query_log_</span>file | E:\Application\MySQL\data\XiaoXin-slow.log |</span><br><span class="line"><span class="code">+---------------------+</span>--------------------------------------------+</span><br><span class="line">2 rows in set, 1 warning (1.26 sec)</span><br></pre></td></tr></table></figure>
+<p>慢查询日志记录了包含所有执行时间超过参数
+<code>long_query_time</code>(单位：秒) 所设置值的 SQL 语句的日志，在
+MySQL 上用命令可以查看，如下：</p>
+<figure class="highlight asciidoc"><table><tr><td class="code"><pre><span class="line"><span class="section">mysql&gt; show variables like &#x27;long%&#x27;;</span></span><br><span class="line"><span class="section">+-----------------+-----------+</span></span><br><span class="line"><span class="section">| Variable_name   | Value     |</span></span><br><span class="line"><span class="section">+-----------------+-----------+</span></span><br><span class="line"><span class="section">| long_query_time | 10.000000 |</span></span><br><span class="line"><span class="section">+-----------------+-----------+</span></span><br><span class="line">1 row in set, 1 warning (0.01 sec)</span><br></pre></td></tr></table></figure>
+<p>这个值是可以修改的，如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SET long_query_time = 1;</span><br></pre></td></tr></table></figure>
+<p>现在修改成超过 1 秒的 SQL 都会被记录在慢查询日志当中！可以设置为 0.01
+秒，表示 10 毫秒。慢查询日志，默认名称是
+<code>host_name-slow.log</code>，存放在 MySQL
+的数据路径下，内容格式显示大致如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">Query_time: 0.012000 Lock_time: 0.000000 Rows_sent: 0 Rows_examined: 139</span><br><span class="line">use tuluneducation;</span><br><span class="line">SET timestamp=1534527397;</span><br><span class="line">select id,author from subject where content like &#x27;%linux%&#x27; and title like &#x27;%c++</span><br><span class="line">linux%&#x27;;</span><br></pre></td></tr></table></figure>
+<p>通过查询慢查询日志，发现项目运行过程中，上面这条 SQL
+语句的执行时间超过了设定的慢查询时间，那么接下来就需要用
+<code>explain</code> 分析一下该 SQL 的执行细节了，根据具体情况找出 SQL
+和MySQL 索引|索引该怎么去优化。</p>
+<div class="note info"><p><code>show profiles</code> 命令可以查看 SQL
+语句具体的运行时间，全局变量的名字是: <code>profiling</code>。</p>
+</div>
+<h1 id="redoundo">5.redo&amp;undo</h1>
+<h2 id="redo-log">redo log</h2>
+<p>redo log
+是<strong>重做日志</strong>，用于记录事务操作的变化，确保事务的持久性。redo
+log
+是在事务开始后就开始记录，不管事务是否提交都会记录下来，在异常发生时（如数据持久化过程中掉电），InnoDB
+会使用 redo log 恢复到掉电前的时刻，保证数据的完整性。</p>
+<p><code>innodb_log_buffer_size</code> 默认是 16M，就是 redo log
+缓冲区的大小，它随着事务开始，就开始写 redo
+log，如果事务比较大，为了避免事务执行过程中花费过多磁盘
+IO，可以设置比较大的 redo log 缓存，节省磁盘IO。InnoDB
+修改操作数据，不是直接修改磁盘上的数据，实际只是修改 Buffer Pool
+中的数据。InnoDB 总是先把 Buffer Pool 中的数据改变记录到 redo log
+中，用来进行崩溃后的数据恢复。优先记录 redo log，然后再慢慢的将 Buffer
+Pool 中的脏数据刷新到磁盘上。</p>
+<p><code>innodb_log_group_home_dir</code>
+指定的目录下的两个文件：<code>ib_logfile0</code>，<code>ib_logfile1</code>，该文件被称作重做
+日志。</p>
+<p>buffer pool 缓存池的作用：加速读和加速写，直接操作 data page，写 redo
+log 修改就算完成，有专门的线程去做把 buffer pool中的 dirty page
+写入磁盘。</p>
+<p><img data-src="/images/MySQL_Log/log_process.png" style="zoom:40%"/></p>
+<h2 id="undo-log">undo log</h2>
+<p><code>undo log</code>
+是回滚日志，保存了事务发生之前的数据的一个版本，用于事务指向时的回滚操作，同时也是实现多版本并发控制(MVCC)下读操作的关键技术。</p>
+<p>其过程如下图所示，其中 <code>DB_TRX_ID</code> 为事务
+ID，<code>DB_ROLL_PTR</code> 为回滚指针：</p>
+<p><img data-src="/images/MySQL_Log/undo_log.png" style="zoom:50%"/></p>
+]]></content>
+      <categories>
+        <category>数据库</category>
+      </categories>
+      <tags>
+        <tag>MySQL</tag>
       </tags>
   </entry>
 </search>
