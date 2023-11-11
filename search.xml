@@ -1450,4 +1450,204 @@ ID，<code>DB_ROLL_PTR</code> 为回滚指针：</p>
         <tag>MySQL</tag>
       </tags>
   </entry>
+  <entry>
+    <title>MySQL索引底层原理</title>
+    <url>/2022/11/10/MySQL%E7%B4%A2%E5%BC%95%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/</url>
+    <content><![CDATA[<blockquote class="blockquote-center">
+<p>MySQL索引底层原理探究</p>
+
+</blockquote>
+<h2 id="索引原理">索引原理</h2>
+<p>这里主要讨论一下 MySQL InnoDB
+存储引擎，基于B-树（但实际上MySQL采用的是B+树结构）的索引结构。</p>
+<p>一次索引的过程大致如下图所示：</p>
+<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:40%"/></p>
+<p>首先来看一下磁盘的结构，其示意图如下所示：</p>
+<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:50%"/></p>
+<p>读/写磁盘某一位置的步骤如下：</p>
+<ol type="1">
+<li>首先根据柱面号，移动读写磁头，使磁头移动到相应的柱面上，这一过程被称为定位或查找；</li>
+<li>所有磁头都定位到柱面号对应的磁道上后，这时根据盘面号来确定指定盘面号上的具体磁道；</li>
+<li>盘面确定后，盘片开始旋转，将指定扇区号的磁道段移动至读写磁头下；</li>
+</ol>
+<p>经过以上步骤，指定数据的存储位置就被找到了，这时就可以开始读/写操作了。</p>
+<p>可以看到，磁盘 I/O
+依靠的是机械运动，其性能所在主要分为如下三个指标：</p>
+<ul>
+<li><strong>寻道时间(seek)</strong>:
+指将读写磁头移动到指定磁道上所需要的时间，这部分时间代价最高；</li>
+<li><strong>旋转延迟时间(rotation)</strong>:
+指磁盘旋转将目标扇区移动到读写磁头下方所需的时间，其取决于磁盘的转速；</li>
+<li><strong>数据传输时间(transfer)</strong>:
+指完成数据传输所需的时间，其取决于接口的数据传输速率；</li>
+</ul>
+<p>对于操作系统来说，当程序需要读取的数据不在内存中时，这时就会触发一个<strong>缺页中断</strong>，那么系统就会向磁盘发出读信号，磁盘会按照
+Block 进行读取，将其载入内存，通常一个 Block 为 16K。</p>
+<p>在操作系统的内存管理机制中，它是以 Page 为单位的，通常为 4K 或
+16K，而一个 Block 的大小则是 Page 的整数倍。</p>
+<p>假设现在从磁盘上读取了 2000 万的索引到内存上，如果使用 AVL
+二叉平衡树来存储，如图所示：</p>
+<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:25%"/></p>
+<p>其中，每个二叉树节点只能存储一个索引，那么其树高大约为 <span
+class="math inline">\(log_220000000\approx25\)</span>，也就是说，如果在最坏的情况下，即每一层的节点都位于不同的
+Block 中，那么总共需要 25 次磁盘 IO 操作。</p>
+<p>而 B- 树则是一个 m 阶的平衡树，通常 m 取 300~500，即一个节点下有 m
+个子节点。如果使用 B- 树的结构来进行存储，假如此时 m 取
+500，那么其树高大约为 <span
+class="math inline">\(log_m20000000=log_{500}20000000\approx3\)</span>，也就是说，在最坏的情况下，只需要
+3 次磁盘 I/O 操作即可完成。通常 m 的大小取值取决于一次磁盘 I/O
+操作所读取的内容能刚好存储在一个节点中。</p>
+<p><img data-src="/images/MySQL_Index/b_tree.png"/></p>
+<p>从上图可以看到B-树存在的缺点：</p>
+<ul>
+<li>每个节点中有 Key，也有 Data，但是每一个节点的存储空间是有限的，如果
+Data 数据较大时会导致每个节点能存储的 Key 的数据很小；</li>
+<li>当存储的数据量很大时同样会导致B-树的高度较大，磁盘 IO
+次数花费增大，效率降低；</li>
+</ul>
+<p>因此针对如上缺点做出了优化，形成了B+树的数据结构，如图所示：</p>
+<p><img data-src="/images/MySQL_Index/B+Tree.png"/></p>
+<p>那么 MySQL
+最终为什么要采用B+树存储索引结构呢，那么看看B-树和B+树在存储结构上有什么不同？</p>
+<ol type="1">
+<li>B-树的每一个节点，存了关键字和对应的数据地址，而B+树的非叶子节点只存关键字，不存数据地址。因此B+树的每一个非叶子节点存储的关键字是远远多于B-树的，B+树的叶子节点存放关键字和数据，因此，从树的高度上来说，B+树的高度要小于B-树，使用的磁盘
+I/O 次数少，因此查询会更快一些。</li>
+<li>B-树由于每个节点都存储关键字和数据，因此离根节点进的数据，查询的就快，离根节点远的数据，查询的就慢；B+树所有的数据都存在叶子节点上，因此在B+树上搜索关键字，找到对应数据的时间是比较平均的，没有快慢之分。</li>
+<li>在B-树上如果做区间查找，遍历的节点是非常多的；B+树所有叶子节点被连接成了有序链表结构，因此做整表遍历和区间查找是非常容易的。</li>
+</ol>
+<p>现在有这样一张数据表：</p>
+<figure class="highlight gherkin"><table><tr><td class="code"><pre><span class="line">mysql&gt; select <span class="symbol">*</span> from student;</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">|<span class="string"> uid </span>|<span class="string"> name        </span>|<span class="string"> age </span>|<span class="string"> sex </span>|</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">|<span class="string">   1 </span>|<span class="string"> zhangsan    </span>|<span class="string">  18 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   2 </span>|<span class="string"> gaoyang     </span>|<span class="string">  20 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   3 </span>|<span class="string"> chenwei     </span>|<span class="string">  22 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   4 </span>|<span class="string"> linfeng     </span>|<span class="string">  21 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   5 </span>|<span class="string"> liuxiang    </span>|<span class="string">  19 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   6 </span>|<span class="string"> niuer       </span>|<span class="string">  17 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   7 </span>|<span class="string"> liuxiaohong </span>|<span class="string">  28 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   8 </span>|<span class="string"> gaolishi    </span>|<span class="string">  37 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   9 </span>|<span class="string"> yuanwei     </span>|<span class="string">  13 </span>|<span class="string"> W   </span>|</span><br><span class="line">+-----+-------------+-----+-----+</span><br></pre></td></tr></table></figure>
+<p>其中，主键字段为
+uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
+<h3 id="情况1">情况1</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid=5;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_1.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>常值查询</strong>，<code>rows</code>
+字段则表示该查询只遍历了 1 行，也就是从 B+ 树的根节点开始进行搜索：</p>
+<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:50%"/></p>
+<h3 id="情况2">情况2</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid&lt;5;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_2.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>范围查询</strong>，<code>rows</code>
+字段则表示该查询遍历了 4 行，也就是从 B+
+树的叶子节点所在层的双向链表进行查询：</p>
+<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:50%"/></p>
+<h3 id="情况3">情况3</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&#x27;linfeng&#x27;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_3.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>整表查询</strong>，<code>rows</code>
+字段则表示该查询遍历了该表的所有行，这是因为所查询的 <code>name</code>
+字段并不存在索引。也就是从 B+
+树的叶子节点所在层的双向链表进行查询，且遍历整个链表。</p>
+<h3 id="情况4">情况4</h3>
+<p>现在使用如下语句为 <code>name</code>
+字段添加索引，将其设置为普通索引：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">create index nameidx on student(name);</span><br></pre></td></tr></table></figure>
+<p>查看所有是否创建正确：</p>
+<figure class="highlight pgsql"><table><tr><td class="code"><pre><span class="line">mysql&gt; <span class="keyword">show</span> <span class="keyword">create</span> <span class="keyword">table</span> student\G</span><br><span class="line">*************************** <span class="number">1.</span> <span class="keyword">row</span> ***************************</span><br><span class="line">       <span class="keyword">Table</span>: student</span><br><span class="line"><span class="keyword">Create</span> <span class="keyword">Table</span>: <span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `student` (</span><br><span class="line">  `uid` <span class="type">int</span> unsigned <span class="keyword">NOT</span> <span class="keyword">NULL</span> AUTO_INCREMENT,</span><br><span class="line">  `<span class="type">name</span>` <span class="type">varchar</span>(<span class="number">50</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `age` tinyint unsigned <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `sex` enum(<span class="string">&#x27;M&#x27;</span>,<span class="string">&#x27;W&#x27;</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  <span class="keyword">PRIMARY KEY</span> (`uid`),</span><br><span class="line">  KEY `nameidx` (`<span class="type">name</span>`)</span><br><span class="line">) ENGINE=InnoDB AUTO_INCREMENT=<span class="number">10</span> <span class="keyword">DEFAULT</span> CHARSET=utf8mb3</span><br><span class="line"><span class="number">1</span> <span class="keyword">row</span> <span class="keyword">in</span> <span class="keyword">set</span> (<span class="number">0.00</span> sec)</span><br></pre></td></tr></table></figure>
+<p>现在该表中就会存在两个索引，一个是主键默认创建的<strong>主键索引</strong>，另一个则是刚才所创建的<strong>普通索引</strong>，也称为<strong>辅助索引</strong>。那么在构建
+B+ 树时，会不但会构建主键索引的 B+ 树，还会构建辅助索引的 B+
+树，且在辅助索引的 B+ 树的节点中的 data 存放的便是主键字段。</p>
+<p><img data-src="/images/MySQL_Index/index_node.png" style="zoom:50%"/></p>
+<p>现在执行如下语句：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT uid FROM student WHERE name=&quot;linfeng&quot;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_4.png"/></p>
+<p>观察 <code>Extra</code>
+字段可知，其查询是通过二级索引树进行查找。</p>
+<h3 id="情况5">情况5</h3>
+<p>现在执行如下 SQL 语句：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&quot;linfeng&quot;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_5.png"/></p>
+<p>与上述一种情况不同的是，此次查询的 <code>Extra</code> 字段变为了
+NULL，这时因为在二级索引树上查找目标值只能得到其主键值，而现在需要主键值所在行的所有数据，那么需要执行如下过程：</p>
+<ol type="1">
+<li>现在二级索引树上根据普通索引查找得到主键值；</li>
+<li>然后在主键索引树上根据刚才得到的主键值进行查找得到所有数据；</li>
+</ol>
+<p>如上过程称之为
+<strong>回表</strong>。所以，如果发生回表操作，也就会产生更多的查找和磁盘
+I/O 操作，会更耗时。</p>
+<h2 id="聚集索引和非聚集索引">聚集索引和非聚集索引</h2>
+<p>在 MyISAM
+引擎中，由于索引和数据存储在不同的两个文件中，所以其主键索引树和二级索引树是一样的，即二级索引树叶子节点中的数据是整行数据，而非主键值。称这种索引为
+<strong>非聚集索引</strong>。而 InnoDB 引擎中的索引则称为
+<strong>聚集索引</strong>。</p>
+<h3 id="myisam">MyISAM</h3>
+<p>MyISAM 引擎使用 B+ 树作为索引结构，叶节点的 Data
+域存放的是数据记录的地址。下图是 MyISAM 主键索引的原理图：</p>
+<p><img data-src="/images/MySQL_Index/myisam_primary_key.png" style="zoom:40%"/></p>
+<p>在 MyISAM
+中，主键索引和辅助索引(<code>Secondary key</code>)在结构上没有任何区别，只是主键索引要求
+Key 是唯一的，而辅助索引的 Key
+可以重复，如果给其它字段创建辅助索引，其结构图如下：</p>
+<p><img data-src="/images/MySQL_Index/myisam_secondary_key.png" style="zoom:40%"/></p>
+<p>根据上面两张图，首先按照 B+ Tree 搜索算法搜索索引，如果指定的 Key
+存在，则取出其 Data 域的值，然后以 Data
+域的值为地址，读取相应数据记录。</p>
+<p>可以看到，MyISAM
+存储引擎，索引结构叶子节点存储关键字和数据地址，也就是说索引关键字和数据没有在一起存放，体现在磁盘上，就是索引在一个文件存储，数据在另一个文件存储，例如一个
+user 表，会在磁盘上存储为三个文件：</p>
+<ul>
+<li>user.frm（表结构文件）</li>
+<li>user.MYD（表的数据文件）</li>
+<li>user.MYI（表的索引文件）</li>
+</ul>
+<p>MyISAM 的索引方式也叫做<strong>非聚集索引</strong>。</p>
+<h3 id="innodb">InnoDB</h3>
+<p>在 InnoDB
+存储引擎的主键索引树的叶子节点中，索引关键字和数据是在一起存放的，其结构如图所示：</p>
+<p><img data-src="/images/MySQL_Index/innodb_primary_key.png" style="zoom:40%"/></p>
+<p>对于 InnoDB
+的辅助索引树而言，其叶子节点上存放的是索引关键字和对应的主键，其结构如图所示：</p>
+<p><img data-src="/images/MySQL_Index/innodb_secondary_key.png" style="zoom:40%"/></p>
+<p>在辅助索引的 B+
+树中，会先根据关键字找到对应的主键，然后再去主键索引树上找到对应的行记录数据。从索引树上可以看到，InnoDB
+的索引关键字和数据都是在一起存放的，体现在磁盘存储上，例如创建一个 user
+表，在磁盘上只存储两种文件：</p>
+<ul>
+<li>user.frm（存储表的结构）</li>
+<li>user.ibd（存储索引和数据）</li>
+</ul>
+<p>InnoDB
+的索引树叶节点包含了完整的数据记录，这种索引叫做<strong>聚集索引</strong>。因为
+InnoDB 的数据文件本身要按主键聚集，所以 InnoDB
+要求表必须有主键（区别于MyISAM可以没有），如果没有显式指定，则 MySQL
+系统会自动选择一个可以唯一标识数据记录的列作为主键，如果不存在这种列，则
+MySQL 自动为 InnoDB 表生成一个隐含字段作为主键，这个字段长度为 6
+个字节，类型为长整形。</p>
+<h2 id="自适应哈希索引">自适应哈希索引</h2>
+<p>对于 InnoDB
+存储引擎来说，如果它检测到同一个二级索引树不断被使用，那么该引擎会在内存上根据二级索引树上的二级索引值，在内存上构建一个哈希表，以此来减少回表的次数以加速搜索。</p>
+<p><img data-src="/images/MySQL_Index/adaptive_hash_index.png" style="zoom:40%"/></p>
+<p><strong>注意</strong>：自适应哈希索引本身的数据维护也是需要耗费性能的，并不是说自适应哈希索引在任何情况下都会提升二级索引的查询性能。</p>
+<p>官方文档的解释如下：</p>
+<figure class="highlight text"><table><tr><td class="code"><pre><span class="line">In MySQL 5.7, the adaptive hash index search system is partitioned. Each index is bound to a specific partition, and each partition is protected by a separate latch. Partitioning is controlled by the innodb_adaptive_hash_index_parts configuration option. </span><br><span class="line"></span><br><span class="line">In earlier releases, the adaptive hash index search system was protected by a single latch which could become a point of contention under heavy workloads. The innodb_adaptive_hash_index_parts option is set to 8 by default. The maximum setting is 512.</span><br><span class="line"></span><br><span class="line">The hash index is always built based on an existing B-tree index on the table. InnoDB can build a hash index on a prefix of any length of the key defined for the B-tree, depending on the pattern of searches that InnoDB observes for the B-tree index.  A hash index can be partial, covering only those pages of the index that are often accessed.</span><br><span class="line"></span><br><span class="line">You can monitor the use of the adaptive hash index and the contention for its use in the SEMAPHORES section of the output of the SHOW ENGINE INNODB STATUS command. If you see many threads waiting on an RW-latch created in btr0sea.c, then it might be useful to disable adaptive hash indexing.</span><br></pre></td></tr></table></figure>
+<p>简单来说，就是在 MySQL 5.7
+版本后，自适应哈希索引搜索系统会被分区，在默认情况下，自适应哈希索引搜索系统是开启的，由
+<code>innodb_adaptive_hash_index</code> 变量来进行控制。在默认情况下会有
+8 个分区，由 <code>innodb_adaptive_hash_index_part</code>
+变量来进行控制，最大值为 512。</p>
+<p>在每个分区中都会有一个单独的锁来控制并发操作，而在 5.7
+版本之前，只使用了一个锁来保护整个哈希索引搜索系统，这会成为系统的瓶颈所在。</p>
+<p>此外，哈希索引可能只构建了部分内存，仅仅包括那些经常访问到的页面。如果哈希索引搜索系统成为了系统的瓶颈，那么就可以考虑将其关闭而提高性能。</p>
+]]></content>
+      <categories>
+        <category>数据库</category>
+      </categories>
+      <tags>
+        <tag>MySQL</tag>
+        <tag>B+树</tag>
+      </tags>
+  </entry>
 </search>

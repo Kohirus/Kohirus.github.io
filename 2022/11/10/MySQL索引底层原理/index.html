@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 7.0.0">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+  <meta name="google-site-verification" content="urbxII7hb1gUQ2XtX0QnhZMTDBp59-rAPrdPFpwsdZ8">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" integrity="sha256-CTSx/A06dm1B063156EVh15m6Y67pAjZZaQc89LLSrU=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pace/1.2.4/themes/blue/pace-theme-center-simple.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pace/1.2.4/pace.min.js" integrity="sha256-gqd7YTjg/BtfqWSwsJOvndl0Bxc8gFImLEkXQT8+qj0=" crossorigin="anonymous"></script>
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"kohirus.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":false,"version":"8.18.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":{"enable":true,"style":"mac"},"fold":{"enable":true,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":true,"lazyload":true,"pangu":true,"comments":{"style":"tabs","active":"gitalk","storage":true,"lazyload":true,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="MySQL索引的底层原理解析">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MySQL索引底层原理">
+<meta property="og:url" content="https://kohirus.github.io/2022/11/10/MySQL%E7%B4%A2%E5%BC%95%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/index.html">
+<meta property="og:site_name" content="Leaos">
+<meta property="og:description" content="MySQL索引的底层原理解析">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/index_process.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/disk.jpg">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/avl_tree.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/b_tree.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/B+Tree.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/result_1.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/case_1.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/result_2.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/case_2.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/result_3.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/index_node.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/result_4.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/result_5.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/myisam_primary_key.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/myisam_secondary_key.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/innodb_primary_key.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/innodb_secondary_key.png">
+<meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/adaptive_hash_index.png">
+<meta property="article:published_time" content="2022-11-10T08:56:50.000Z">
+<meta property="article:modified_time" content="2023-11-11T09:09:18.667Z">
+<meta property="article:author" content="Leaos">
+<meta property="article:tag" content="MySQL">
+<meta property="article:tag" content="B+树">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://kohirus.github.io/images/MySQL_Index/index_process.png">
+
+
+<link rel="canonical" href="https://kohirus.github.io/2022/11/10/MySQL%E7%B4%A2%E5%BC%95%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://kohirus.github.io/2022/11/10/MySQL%E7%B4%A2%E5%BC%95%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/","path":"2022/11/10/MySQL索引底层原理/","title":"MySQL索引底层原理"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>MySQL索引底层原理 | Leaos</title>
+  
+
+  <script src="/js/third-party/analytics/baidu-analytics.js"></script>
+  <script async src="https://hm.baidu.com/hm.js?e08f006ac6bdcc68038c3ccc128115fc"></script>
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">Leaos</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">Kohirus</p>
+      <img class="custom-logo-image" src="/images/logo.png" alt="Leaos">
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-house fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签<span class="badge">11</span></a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">6</span></a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E5%8E%9F%E7%90%86"><span class="nav-number">1.</span> <span class="nav-text">索引原理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%85%E5%86%B51"><span class="nav-number">1.1.</span> <span class="nav-text">情况1</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%85%E5%86%B52"><span class="nav-number">1.2.</span> <span class="nav-text">情况2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%85%E5%86%B53"><span class="nav-number">1.3.</span> <span class="nav-text">情况3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%85%E5%86%B54"><span class="nav-number">1.4.</span> <span class="nav-text">情况4</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%85%E5%86%B55"><span class="nav-number">1.5.</span> <span class="nav-text">情况5</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%81%9A%E9%9B%86%E7%B4%A2%E5%BC%95%E5%92%8C%E9%9D%9E%E8%81%9A%E9%9B%86%E7%B4%A2%E5%BC%95"><span class="nav-number">2.</span> <span class="nav-text">聚集索引和非聚集索引</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#myisam"><span class="nav-number">2.1.</span> <span class="nav-text">MyISAM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#innodb"><span class="nav-number">2.2.</span> <span class="nav-text">InnoDB</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E9%80%82%E5%BA%94%E5%93%88%E5%B8%8C%E7%B4%A2%E5%BC%95"><span class="nav-number">3.</span> <span class="nav-text">自适应哈希索引</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Leaos</p>
+  <div class="site-description" itemprop="description">码不停蹄</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">11</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/Kohirus" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;Kohirus" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:kohirus@foxmail.com" title="E-Mail → mailto:kohirus@foxmail.com" rel="noopener me" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.cnblogs.com/tuilk/" title="Cnblogs → https:&#x2F;&#x2F;www.cnblogs.com&#x2F;tuilk&#x2F;" rel="noopener me" target="_blank"><i class="fa fa-blog fa-fw"></i>Cnblogs</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://space.bilibili.com/278975936?spm_id_from=333.1007.0.0" title="Bilibili → https:&#x2F;&#x2F;space.bilibili.com&#x2F;278975936?spm_id_from&#x3D;333.1007.0.0" rel="noopener me" target="_blank"><i class="fa fa-globe fa-fw"></i>Bilibili</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://kohirus.github.io/2022/11/10/MySQL%E7%B4%A2%E5%BC%95%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Leaos">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Leaos">
+      <meta itemprop="description" content="码不停蹄">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="MySQL索引底层原理 | Leaos">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MySQL索引底层原理
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-11-10 16:56:50" itemprop="dateCreated datePublished" datetime="2022-11-10T16:56:50+08:00">2022-11-10</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2023-11-11 17:09:18" itemprop="dateModified" datetime="2023-11-11T17:09:18+08:00">2023-11-11</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E6%95%B0%E6%8D%AE%E5%BA%93/" itemprop="url" rel="index"><span itemprop="name">数据库</span></a>
+        </span>
+    </span>
+
+  
+    <span class="post-meta-item" title="阅读次数" id="busuanzi_container_page_pv">
+      <span class="post-meta-item-icon">
+        <i class="far fa-eye"></i>
+      </span>
+      <span class="post-meta-item-text">阅读次数：</span>
+      <span id="busuanzi_value_page_pv"></span>
+    </span>
+    <span class="post-meta-item" title="本文字数">
+      <span class="post-meta-item-icon">
+        <i class="far fa-file-word"></i>
+      </span>
+      <span class="post-meta-item-text">本文字数：</span>
+      <span>3.4k</span>
+    </span>
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><blockquote class="blockquote-center">
+<p>MySQL索引底层原理探究</p>
+
+</blockquote>
+<h2 id="索引原理">索引原理</h2>
+<p>这里主要讨论一下 MySQL InnoDB
+存储引擎，基于B-树（但实际上MySQL采用的是B+树结构）的索引结构。</p>
+<p>一次索引的过程大致如下图所示：</p>
+<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:40%"/></p>
+<p>首先来看一下磁盘的结构，其示意图如下所示：</p>
+<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:50%"/></p>
+<p>读/写磁盘某一位置的步骤如下：</p>
+<ol type="1">
+<li>首先根据柱面号，移动读写磁头，使磁头移动到相应的柱面上，这一过程被称为定位或查找；</li>
+<li>所有磁头都定位到柱面号对应的磁道上后，这时根据盘面号来确定指定盘面号上的具体磁道；</li>
+<li>盘面确定后，盘片开始旋转，将指定扇区号的磁道段移动至读写磁头下；</li>
+</ol>
+<p>经过以上步骤，指定数据的存储位置就被找到了，这时就可以开始读/写操作了。</p>
+<p>可以看到，磁盘 I/O
+依靠的是机械运动，其性能所在主要分为如下三个指标：</p>
+<ul>
+<li><strong>寻道时间(seek)</strong>:
+指将读写磁头移动到指定磁道上所需要的时间，这部分时间代价最高；</li>
+<li><strong>旋转延迟时间(rotation)</strong>:
+指磁盘旋转将目标扇区移动到读写磁头下方所需的时间，其取决于磁盘的转速；</li>
+<li><strong>数据传输时间(transfer)</strong>:
+指完成数据传输所需的时间，其取决于接口的数据传输速率；</li>
+</ul>
+<p>对于操作系统来说，当程序需要读取的数据不在内存中时，这时就会触发一个<strong>缺页中断</strong>，那么系统就会向磁盘发出读信号，磁盘会按照
+Block 进行读取，将其载入内存，通常一个 Block 为 16K。</p>
+<p>在操作系统的内存管理机制中，它是以 Page 为单位的，通常为 4K 或
+16K，而一个 Block 的大小则是 Page 的整数倍。</p>
+<p>假设现在从磁盘上读取了 2000 万的索引到内存上，如果使用 AVL
+二叉平衡树来存储，如图所示：</p>
+<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:25%"/></p>
+<p>其中，每个二叉树节点只能存储一个索引，那么其树高大约为 <span
+class="math inline">\(log_220000000\approx25\)</span>，也就是说，如果在最坏的情况下，即每一层的节点都位于不同的
+Block 中，那么总共需要 25 次磁盘 IO 操作。</p>
+<p>而 B- 树则是一个 m 阶的平衡树，通常 m 取 300~500，即一个节点下有 m
+个子节点。如果使用 B- 树的结构来进行存储，假如此时 m 取
+500，那么其树高大约为 <span
+class="math inline">\(log_m20000000=log_{500}20000000\approx3\)</span>，也就是说，在最坏的情况下，只需要
+3 次磁盘 I/O 操作即可完成。通常 m 的大小取值取决于一次磁盘 I/O
+操作所读取的内容能刚好存储在一个节点中。</p>
+<p><img data-src="/images/MySQL_Index/b_tree.png"/></p>
+<p>从上图可以看到B-树存在的缺点：</p>
+<ul>
+<li>每个节点中有 Key，也有 Data，但是每一个节点的存储空间是有限的，如果
+Data 数据较大时会导致每个节点能存储的 Key 的数据很小；</li>
+<li>当存储的数据量很大时同样会导致B-树的高度较大，磁盘 IO
+次数花费增大，效率降低；</li>
+</ul>
+<p>因此针对如上缺点做出了优化，形成了B+树的数据结构，如图所示：</p>
+<p><img data-src="/images/MySQL_Index/B+Tree.png"/></p>
+<p>那么 MySQL
+最终为什么要采用B+树存储索引结构呢，那么看看B-树和B+树在存储结构上有什么不同？</p>
+<ol type="1">
+<li>B-树的每一个节点，存了关键字和对应的数据地址，而B+树的非叶子节点只存关键字，不存数据地址。因此B+树的每一个非叶子节点存储的关键字是远远多于B-树的，B+树的叶子节点存放关键字和数据，因此，从树的高度上来说，B+树的高度要小于B-树，使用的磁盘
+I/O 次数少，因此查询会更快一些。</li>
+<li>B-树由于每个节点都存储关键字和数据，因此离根节点进的数据，查询的就快，离根节点远的数据，查询的就慢；B+树所有的数据都存在叶子节点上，因此在B+树上搜索关键字，找到对应数据的时间是比较平均的，没有快慢之分。</li>
+<li>在B-树上如果做区间查找，遍历的节点是非常多的；B+树所有叶子节点被连接成了有序链表结构，因此做整表遍历和区间查找是非常容易的。</li>
+</ol>
+<p>现在有这样一张数据表：</p>
+<figure class="highlight gherkin"><table><tr><td class="code"><pre><span class="line">mysql&gt; select <span class="symbol">*</span> from student;</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">|<span class="string"> uid </span>|<span class="string"> name        </span>|<span class="string"> age </span>|<span class="string"> sex </span>|</span><br><span class="line">+-----+-------------+-----+-----+</span><br><span class="line">|<span class="string">   1 </span>|<span class="string"> zhangsan    </span>|<span class="string">  18 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   2 </span>|<span class="string"> gaoyang     </span>|<span class="string">  20 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   3 </span>|<span class="string"> chenwei     </span>|<span class="string">  22 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   4 </span>|<span class="string"> linfeng     </span>|<span class="string">  21 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   5 </span>|<span class="string"> liuxiang    </span>|<span class="string">  19 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   6 </span>|<span class="string"> niuer       </span>|<span class="string">  17 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   7 </span>|<span class="string"> liuxiaohong </span>|<span class="string">  28 </span>|<span class="string"> W   </span>|</span><br><span class="line">|<span class="string">   8 </span>|<span class="string"> gaolishi    </span>|<span class="string">  37 </span>|<span class="string"> M   </span>|</span><br><span class="line">|<span class="string">   9 </span>|<span class="string"> yuanwei     </span>|<span class="string">  13 </span>|<span class="string"> W   </span>|</span><br><span class="line">+-----+-------------+-----+-----+</span><br></pre></td></tr></table></figure>
+<p>其中，主键字段为
+uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
+<h3 id="情况1">情况1</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid=5;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_1.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>常值查询</strong>，<code>rows</code>
+字段则表示该查询只遍历了 1 行，也就是从 B+ 树的根节点开始进行搜索：</p>
+<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:50%"/></p>
+<h3 id="情况2">情况2</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid&lt;5;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_2.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>范围查询</strong>，<code>rows</code>
+字段则表示该查询遍历了 4 行，也就是从 B+
+树的叶子节点所在层的双向链表进行查询：</p>
+<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:50%"/></p>
+<h3 id="情况3">情况3</h3>
+<p>查询语句如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&#x27;linfeng&#x27;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_3.png"/></p>
+<p>观察 <code>type</code>
+字段可知该查询为<strong>整表查询</strong>，<code>rows</code>
+字段则表示该查询遍历了该表的所有行，这是因为所查询的 <code>name</code>
+字段并不存在索引。也就是从 B+
+树的叶子节点所在层的双向链表进行查询，且遍历整个链表。</p>
+<h3 id="情况4">情况4</h3>
+<p>现在使用如下语句为 <code>name</code>
+字段添加索引，将其设置为普通索引：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">create index nameidx on student(name);</span><br></pre></td></tr></table></figure>
+<p>查看所有是否创建正确：</p>
+<figure class="highlight pgsql"><table><tr><td class="code"><pre><span class="line">mysql&gt; <span class="keyword">show</span> <span class="keyword">create</span> <span class="keyword">table</span> student\G</span><br><span class="line">*************************** <span class="number">1.</span> <span class="keyword">row</span> ***************************</span><br><span class="line">       <span class="keyword">Table</span>: student</span><br><span class="line"><span class="keyword">Create</span> <span class="keyword">Table</span>: <span class="keyword">CREATE</span> <span class="keyword">TABLE</span> `student` (</span><br><span class="line">  `uid` <span class="type">int</span> unsigned <span class="keyword">NOT</span> <span class="keyword">NULL</span> AUTO_INCREMENT,</span><br><span class="line">  `<span class="type">name</span>` <span class="type">varchar</span>(<span class="number">50</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `age` tinyint unsigned <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  `sex` enum(<span class="string">&#x27;M&#x27;</span>,<span class="string">&#x27;W&#x27;</span>) <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">  <span class="keyword">PRIMARY KEY</span> (`uid`),</span><br><span class="line">  KEY `nameidx` (`<span class="type">name</span>`)</span><br><span class="line">) ENGINE=InnoDB AUTO_INCREMENT=<span class="number">10</span> <span class="keyword">DEFAULT</span> CHARSET=utf8mb3</span><br><span class="line"><span class="number">1</span> <span class="keyword">row</span> <span class="keyword">in</span> <span class="keyword">set</span> (<span class="number">0.00</span> sec)</span><br></pre></td></tr></table></figure>
+<p>现在该表中就会存在两个索引，一个是主键默认创建的<strong>主键索引</strong>，另一个则是刚才所创建的<strong>普通索引</strong>，也称为<strong>辅助索引</strong>。那么在构建
+B+ 树时，会不但会构建主键索引的 B+ 树，还会构建辅助索引的 B+
+树，且在辅助索引的 B+ 树的节点中的 data 存放的便是主键字段。</p>
+<p><img data-src="/images/MySQL_Index/index_node.png" style="zoom:50%"/></p>
+<p>现在执行如下语句：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT uid FROM student WHERE name=&quot;linfeng&quot;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_4.png"/></p>
+<p>观察 <code>Extra</code>
+字段可知，其查询是通过二级索引树进行查找。</p>
+<h3 id="情况5">情况5</h3>
+<p>现在执行如下 SQL 语句：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&quot;linfeng&quot;;</span><br></pre></td></tr></table></figure>
+<p>使用 <code>explain</code> 关键字查看该语句的搜索细节如下：</p>
+<p><img data-src="/images/MySQL_Index/result_5.png"/></p>
+<p>与上述一种情况不同的是，此次查询的 <code>Extra</code> 字段变为了
+NULL，这时因为在二级索引树上查找目标值只能得到其主键值，而现在需要主键值所在行的所有数据，那么需要执行如下过程：</p>
+<ol type="1">
+<li>现在二级索引树上根据普通索引查找得到主键值；</li>
+<li>然后在主键索引树上根据刚才得到的主键值进行查找得到所有数据；</li>
+</ol>
+<p>如上过程称之为
+<strong>回表</strong>。所以，如果发生回表操作，也就会产生更多的查找和磁盘
+I/O 操作，会更耗时。</p>
+<h2 id="聚集索引和非聚集索引">聚集索引和非聚集索引</h2>
+<p>在 MyISAM
+引擎中，由于索引和数据存储在不同的两个文件中，所以其主键索引树和二级索引树是一样的，即二级索引树叶子节点中的数据是整行数据，而非主键值。称这种索引为
+<strong>非聚集索引</strong>。而 InnoDB 引擎中的索引则称为
+<strong>聚集索引</strong>。</p>
+<h3 id="myisam">MyISAM</h3>
+<p>MyISAM 引擎使用 B+ 树作为索引结构，叶节点的 Data
+域存放的是数据记录的地址。下图是 MyISAM 主键索引的原理图：</p>
+<p><img data-src="/images/MySQL_Index/myisam_primary_key.png" style="zoom:40%"/></p>
+<p>在 MyISAM
+中，主键索引和辅助索引(<code>Secondary key</code>)在结构上没有任何区别，只是主键索引要求
+Key 是唯一的，而辅助索引的 Key
+可以重复，如果给其它字段创建辅助索引，其结构图如下：</p>
+<p><img data-src="/images/MySQL_Index/myisam_secondary_key.png" style="zoom:40%"/></p>
+<p>根据上面两张图，首先按照 B+ Tree 搜索算法搜索索引，如果指定的 Key
+存在，则取出其 Data 域的值，然后以 Data
+域的值为地址，读取相应数据记录。</p>
+<p>可以看到，MyISAM
+存储引擎，索引结构叶子节点存储关键字和数据地址，也就是说索引关键字和数据没有在一起存放，体现在磁盘上，就是索引在一个文件存储，数据在另一个文件存储，例如一个
+user 表，会在磁盘上存储为三个文件：</p>
+<ul>
+<li>user.frm（表结构文件）</li>
+<li>user.MYD（表的数据文件）</li>
+<li>user.MYI（表的索引文件）</li>
+</ul>
+<p>MyISAM 的索引方式也叫做<strong>非聚集索引</strong>。</p>
+<h3 id="innodb">InnoDB</h3>
+<p>在 InnoDB
+存储引擎的主键索引树的叶子节点中，索引关键字和数据是在一起存放的，其结构如图所示：</p>
+<p><img data-src="/images/MySQL_Index/innodb_primary_key.png" style="zoom:40%"/></p>
+<p>对于 InnoDB
+的辅助索引树而言，其叶子节点上存放的是索引关键字和对应的主键，其结构如图所示：</p>
+<p><img data-src="/images/MySQL_Index/innodb_secondary_key.png" style="zoom:40%"/></p>
+<p>在辅助索引的 B+
+树中，会先根据关键字找到对应的主键，然后再去主键索引树上找到对应的行记录数据。从索引树上可以看到，InnoDB
+的索引关键字和数据都是在一起存放的，体现在磁盘存储上，例如创建一个 user
+表，在磁盘上只存储两种文件：</p>
+<ul>
+<li>user.frm（存储表的结构）</li>
+<li>user.ibd（存储索引和数据）</li>
+</ul>
+<p>InnoDB
+的索引树叶节点包含了完整的数据记录，这种索引叫做<strong>聚集索引</strong>。因为
+InnoDB 的数据文件本身要按主键聚集，所以 InnoDB
+要求表必须有主键（区别于MyISAM可以没有），如果没有显式指定，则 MySQL
+系统会自动选择一个可以唯一标识数据记录的列作为主键，如果不存在这种列，则
+MySQL 自动为 InnoDB 表生成一个隐含字段作为主键，这个字段长度为 6
+个字节，类型为长整形。</p>
+<h2 id="自适应哈希索引">自适应哈希索引</h2>
+<p>对于 InnoDB
+存储引擎来说，如果它检测到同一个二级索引树不断被使用，那么该引擎会在内存上根据二级索引树上的二级索引值，在内存上构建一个哈希表，以此来减少回表的次数以加速搜索。</p>
+<p><img data-src="/images/MySQL_Index/adaptive_hash_index.png" style="zoom:40%"/></p>
+<p><strong>注意</strong>：自适应哈希索引本身的数据维护也是需要耗费性能的，并不是说自适应哈希索引在任何情况下都会提升二级索引的查询性能。</p>
+<p>官方文档的解释如下：</p>
+<figure class="highlight text"><table><tr><td class="code"><pre><span class="line">In MySQL 5.7, the adaptive hash index search system is partitioned. Each index is bound to a specific partition, and each partition is protected by a separate latch. Partitioning is controlled by the innodb_adaptive_hash_index_parts configuration option. </span><br><span class="line"></span><br><span class="line">In earlier releases, the adaptive hash index search system was protected by a single latch which could become a point of contention under heavy workloads. The innodb_adaptive_hash_index_parts option is set to 8 by default. The maximum setting is 512.</span><br><span class="line"></span><br><span class="line">The hash index is always built based on an existing B-tree index on the table. InnoDB can build a hash index on a prefix of any length of the key defined for the B-tree, depending on the pattern of searches that InnoDB observes for the B-tree index.  A hash index can be partial, covering only those pages of the index that are often accessed.</span><br><span class="line"></span><br><span class="line">You can monitor the use of the adaptive hash index and the contention for its use in the SEMAPHORES section of the output of the SHOW ENGINE INNODB STATUS command. If you see many threads waiting on an RW-latch created in btr0sea.c, then it might be useful to disable adaptive hash indexing.</span><br></pre></td></tr></table></figure>
+<p>简单来说，就是在 MySQL 5.7
+版本后，自适应哈希索引搜索系统会被分区，在默认情况下，自适应哈希索引搜索系统是开启的，由
+<code>innodb_adaptive_hash_index</code> 变量来进行控制。在默认情况下会有
+8 个分区，由 <code>innodb_adaptive_hash_index_part</code>
+变量来进行控制，最大值为 512。</p>
+<p>在每个分区中都会有一个单独的锁来控制并发操作，而在 5.7
+版本之前，只使用了一个锁来保护整个哈希索引搜索系统，这会成为系统的瓶颈所在。</p>
+<p>此外，哈希索引可能只构建了部分内存，仅仅包括那些经常访问到的页面。如果哈希索引搜索系统成为了系统的瓶颈，那么就可以考虑将其关闭而提高性能。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="reward-container">
+  <div>请我一杯咖啡吧！</div>
+  <button>
+    赞赏
+  </button>
+  <div class="post-reward">
+      <div>
+        <img src="/images/wechatpay.jpg" alt="Leaos 微信">
+        <span>微信</span>
+      </div>
+      <div>
+        <img src="/images/alipay.jpg" alt="Leaos 支付宝">
+        <span>支付宝</span>
+      </div>
+
+  </div>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/MySQL/" rel="tag"><i class="fa fa-tag"></i> MySQL</a>
+              <a href="/tags/B-%E6%A0%91/" rel="tag"><i class="fa fa-tag"></i> B+树</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+            </div>
+            <div class="post-nav-item">
+                <a href="/2022/12/15/STL%E4%B9%8B%E7%A9%BA%E9%97%B4%E9%85%8D%E7%BD%AE%E5%99%A8/" rel="next" title="STL之空间配置器">
+                  STL之空间配置器 <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2023</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">Leaos</span>
+  </div>
+<div class="busuanzi-count">
+    <span class="post-meta-item" id="busuanzi_container_site_uv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-user"></i>
+      </span>
+      <span class="site-uv" title="总访客量">
+        <span id="busuanzi_value_site_uv"></span>
+      </span>
+    </span>
+    <span class="post-meta-item" id="busuanzi_container_site_pv">
+      <span class="post-meta-item-icon">
+        <i class="fa fa-eye"></i>
+      </span>
+      <span class="site-pv" title="总访问量">
+        <span id="busuanzi_value_site_pv"></span>
+      </span>
+    </span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/Kohiurs" class="github-corner" title="在 GitHub 上关注我" aria-label="在 GitHub 上关注我" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script size="300" alpha="0.6" zIndex="-1" src="https://cdnjs.cloudflare.com/ajax/libs/ribbon.js/1.0.2/ribbon.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/next-theme-pjax/0.6.0/pjax.min.js" integrity="sha256-vxLn1tSKWD4dqbMRyv940UYw4sXgMtYcK6reefzZrao=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/medium-zoom/1.0.8/medium-zoom.min.js" integrity="sha256-7PhEpEWEW0XXQ0k6kQrPKwuoIomz8R8IYyuU1Qew4P8=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lozad.js/1.16.0/lozad.min.js" integrity="sha256-mOFREFhqmHeQbXpK2lp4nA3qooVgACfh88fpJftLBbc=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pangu/4.0.7/pangu.min.js" integrity="sha256-j+yj56cdEY2CwkVtGyz18fNybFGpMGJ8JxG3GSyO2+I=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/next-boot.js"></script><script src="/js/pjax.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.4.1/search.js" integrity="sha256-1kfA5uHPf65M5cphT2dvymhkuyHPQp5A53EGZOnOLmc=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+  <script src="/js/third-party/pace.js"></script>
+
+
+  
+  <script data-pjax async src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+  
+
+  <script class="next-config" data-name="enableMath" type="application/json">false</script><script class="next-config" data-name="mathjax" type="application/json">{"enable":true,"tags":"ams","js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js","integrity":"sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI="}}</script>
+<script src="/js/third-party/math/mathjax.js"></script>
+
+
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"Kohirus/Kohirus.github.io","issue_term":"pathname","theme":"github-light"}</script>
+<script src="/js/third-party/comments/utterances.js"></script>
+
+</body>
+</html>
