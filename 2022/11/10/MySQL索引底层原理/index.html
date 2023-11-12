@@ -48,7 +48,7 @@
 <meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/innodb_secondary_key.png">
 <meta property="og:image" content="https://kohirus.github.io/images/MySQL_Index/adaptive_hash_index.png">
 <meta property="article:published_time" content="2022-11-10T08:56:50.000Z">
-<meta property="article:modified_time" content="2023-11-11T09:09:18.667Z">
+<meta property="article:modified_time" content="2023-11-11T09:37:14.673Z">
 <meta property="article:author" content="Leaos">
 <meta property="article:tag" content="MySQL">
 <meta property="article:tag" content="B+树">
@@ -115,7 +115,7 @@
 
 
 <nav class="site-nav">
-  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-house fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签<span class="badge">11</span></a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类<span class="badge">3</span></a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">6</span></a></li>
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-house fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签<span class="badge">14</span></a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类<span class="badge">4</span></a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">7</span></a></li>
       <li class="menu-item menu-item-search">
         <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
         </a>
@@ -179,18 +179,18 @@
   <nav class="site-state">
       <div class="site-state-item site-state-posts">
         <a href="/archives/">
-          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-count">7</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
           <a href="/categories/">
-        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-count">4</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
       <div class="site-state-item site-state-tags">
           <a href="/tags/">
-        <span class="site-state-item-count">11</span>
+        <span class="site-state-item-count">14</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
@@ -267,7 +267,7 @@
         <i class="far fa-calendar-check"></i>
       </span>
       <span class="post-meta-item-text">更新于</span>
-      <time title="修改时间：2023-11-11 17:09:18" itemprop="dateModified" datetime="2023-11-11T17:09:18+08:00">2023-11-11</time>
+      <time title="修改时间：2023-11-11 17:37:14" itemprop="dateModified" datetime="2023-11-11T17:37:14+08:00">2023-11-11</time>
     </span>
     <span class="post-meta-item">
       <span class="post-meta-item-icon">
@@ -310,9 +310,9 @@
 <p>这里主要讨论一下 MySQL InnoDB
 存储引擎，基于B-树（但实际上MySQL采用的是B+树结构）的索引结构。</p>
 <p>一次索引的过程大致如下图所示：</p>
-<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:40%"/></p>
+<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:50%"/></p>
 <p>首先来看一下磁盘的结构，其示意图如下所示：</p>
-<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:60%"/></p>
 <p>读/写磁盘某一位置的步骤如下：</p>
 <ol type="1">
 <li>首先根据柱面号，移动读写磁头，使磁头移动到相应的柱面上，这一过程被称为定位或查找；</li>
@@ -336,7 +336,7 @@ Block 进行读取，将其载入内存，通常一个 Block 为 16K。</p>
 16K，而一个 Block 的大小则是 Page 的整数倍。</p>
 <p>假设现在从磁盘上读取了 2000 万的索引到内存上，如果使用 AVL
 二叉平衡树来存储，如图所示：</p>
-<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:25%"/></p>
+<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:40%"/></p>
 <p>其中，每个二叉树节点只能存储一个索引，那么其树高大约为 <span
 class="math inline">\(log_220000000\approx25\)</span>，也就是说，如果在最坏的情况下，即每一层的节点都位于不同的
 Block 中，那么总共需要 25 次磁盘 IO 操作。</p>
@@ -376,7 +376,7 @@ uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
 <p>观察 <code>type</code>
 字段可知该查询为<strong>常值查询</strong>，<code>rows</code>
 字段则表示该查询只遍历了 1 行，也就是从 B+ 树的根节点开始进行搜索：</p>
-<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:60%"/></p>
 <h3 id="情况2">情况2</h3>
 <p>查询语句如下：</p>
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid&lt;5;</span><br></pre></td></tr></table></figure>
@@ -386,7 +386,7 @@ uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
 字段可知该查询为<strong>范围查询</strong>，<code>rows</code>
 字段则表示该查询遍历了 4 行，也就是从 B+
 树的叶子节点所在层的双向链表进行查询：</p>
-<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:60%"/></p>
 <h3 id="情况3">情况3</h3>
 <p>查询语句如下：</p>
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&#x27;linfeng&#x27;;</span><br></pre></td></tr></table></figure>
@@ -525,6 +525,9 @@ MySQL 自动为 InnoDB 表生成一个隐含字段作为主键，这个字段长
 
           <div class="post-nav">
             <div class="post-nav-item">
+                <a href="/2022/08/19/%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%B9%8B%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86%E6%A8%A1%E5%BC%8F/" rel="prev" title="服务器之事件处理模式">
+                  <i class="fa fa-angle-left"></i> 服务器之事件处理模式
+                </a>
             </div>
             <div class="post-nav-item">
                 <a href="/2022/12/15/STL%E4%B9%8B%E7%A9%BA%E9%97%B4%E9%85%8D%E7%BD%AE%E5%99%A8/" rel="next" title="STL之空间配置器">

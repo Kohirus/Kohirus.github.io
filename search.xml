@@ -1461,9 +1461,9 @@ ID，<code>DB_ROLL_PTR</code> 为回滚指针：</p>
 <p>这里主要讨论一下 MySQL InnoDB
 存储引擎，基于B-树（但实际上MySQL采用的是B+树结构）的索引结构。</p>
 <p>一次索引的过程大致如下图所示：</p>
-<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:40%"/></p>
+<p><img data-src="/images/MySQL_Index/index_process.png" style="zoom:50%"/></p>
 <p>首先来看一下磁盘的结构，其示意图如下所示：</p>
-<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/disk.jpg" style="zoom:60%"/></p>
 <p>读/写磁盘某一位置的步骤如下：</p>
 <ol type="1">
 <li>首先根据柱面号，移动读写磁头，使磁头移动到相应的柱面上，这一过程被称为定位或查找；</li>
@@ -1487,7 +1487,7 @@ Block 进行读取，将其载入内存，通常一个 Block 为 16K。</p>
 16K，而一个 Block 的大小则是 Page 的整数倍。</p>
 <p>假设现在从磁盘上读取了 2000 万的索引到内存上，如果使用 AVL
 二叉平衡树来存储，如图所示：</p>
-<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:25%"/></p>
+<p><img data-src="/images/MySQL_Index/avl_tree.png" style="zoom:40%"/></p>
 <p>其中，每个二叉树节点只能存储一个索引，那么其树高大约为 <span
 class="math inline">\(log_220000000\approx25\)</span>，也就是说，如果在最坏的情况下，即每一层的节点都位于不同的
 Block 中，那么总共需要 25 次磁盘 IO 操作。</p>
@@ -1527,7 +1527,7 @@ uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
 <p>观察 <code>type</code>
 字段可知该查询为<strong>常值查询</strong>，<code>rows</code>
 字段则表示该查询只遍历了 1 行，也就是从 B+ 树的根节点开始进行搜索：</p>
-<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/case_1.png" style="zoom:60%"/></p>
 <h3 id="情况2">情况2</h3>
 <p>查询语句如下：</p>
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE uid&lt;5;</span><br></pre></td></tr></table></figure>
@@ -1537,7 +1537,7 @@ uid，那么对于不同的业务场景，其查询的方式是不同的。</p>
 字段可知该查询为<strong>范围查询</strong>，<code>rows</code>
 字段则表示该查询遍历了 4 行，也就是从 B+
 树的叶子节点所在层的双向链表进行查询：</p>
-<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:50%"/></p>
+<p><img data-src="/images/MySQL_Index/case_2.png" style="zoom:60%"/></p>
 <h3 id="情况3">情况3</h3>
 <p>查询语句如下：</p>
 <figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">SELECT * FROM student WHERE name=&#x27;linfeng&#x27;;</span><br></pre></td></tr></table></figure>
@@ -1648,6 +1648,321 @@ MySQL 自动为 InnoDB 表生成一个隐含字段作为主键，这个字段长
       <tags>
         <tag>MySQL</tag>
         <tag>B+树</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>服务器之事件处理模式</title>
+    <url>/2022/08/19/%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%B9%8B%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86%E6%A8%A1%E5%BC%8F/</url>
+    <content><![CDATA[<blockquote class="blockquote-center">
+<p>探讨 Linux 下的五种 I/O 模型及常见的事件处理模式: Reactor 和
+Proactor</p>
+
+</blockquote>
+<h2 id="io模型">I/O模型</h2>
+<p>对于一个套接字上的输入操作，通常存在以下两个步骤：</p>
+<ol type="1">
+<li>等待分组到达，被复制到内核缓冲区中</li>
+<li>将数据从内核缓冲区复制到应用进程的缓冲区中</li>
+</ol>
+<p>对于上述过程，在 Unix 下有 5 中基本的 I/O 模型可以对其进行处理：</p>
+<ul>
+<li>阻塞式 I/O</li>
+<li>非阻塞式 I/O</li>
+<li>I/O 复用</li>
+<li>信号驱动 I/O</li>
+<li>异步 I/O</li>
+</ul>
+<h3 id="阻塞式-io">1. 阻塞式 I/O</h3>
+<p>阻塞式 I/O 是最基本的 I/O
+模型。例如，默认情况下的所有套接字接口函数都是阻塞式 I/O，如图所示：</p>
+<p><img data-src="/images/EventHandlingMode/blocking_io.png" style="zoom: 55%"/></p>
+<p><strong>阻塞式 I/O
+就如同餐馆做饭，服务员在窗口旁一直等待直到厨师将饭菜做好，然后再将做好的饭菜端到顾客旁边。</strong></p>
+<h3 id="非阻塞式-io">2. 非阻塞式 I/O</h3>
+<p>如果某个进程将套接字设置为非阻塞，那么也就是在通知内核，当前所请求的
+I/O 操作如果在没有可用的读/写事件时，不要将该 I/O
+操作阻塞，而是立即返回错误。</p>
+<p><img data-src="/images/EventHandlingMode/nonblocking_io.png" style="zoom: 55%"/></p>
+<p><strong>同样的，在非阻塞式 I/O
+中，服务员不会一直在窗口前等待，而是采用轮询的方式，不停的去窗口附近查看是否有饭菜准备好。直到饭菜准备好，然后再将做好的饭菜端到顾客旁边。</strong></p>
+<h3 id="信号驱动-io">3. 信号驱动 I/O</h3>
+<p>在信号驱动 I/O 模型下，我们可以让内核在描述符就绪时发送 SIGIO
+信号通知我们。当数据报准备好时，内核就会为该进程产生一个 SIGIO
+信号。随后，该进程就可以将数据从内核复制到用户空间以处理数据。</p>
+<p>无论如何处理 SIGIO
+信号，这种模型的优势在于等待数据报到达期间进程不会被阻塞。主循环可以继续执行，只需等待来自信号处理函数的通知：既可以是数据已准备好被处理，也可以是数据报已准备好被读取。</p>
+<p><img data-src="/images/EventHandlingMode/signal_io.png" style="zoom: 55%"/></p>
+<p><strong>在信号驱动 I/O
+的模型下，服务员无需站在窗口前一直等待饭菜就绪，也无需不停的轮询窗口是否存在就绪的饭菜，在饭菜未就绪期间，服务员可以去做其他事情。如果饭菜已经就绪，厨师则按铃以告诉服务员饭菜准备就绪，此时，服务员停下手头的工作来取走饭菜，并将其端到顾客的面前。</strong></p>
+<h3 id="io-复用">4. I/O 复用</h3>
+<p>在 I/O 复用模型中，系统调用仅仅阻塞在 select/poll/epoll
+上，而不是阻塞在真正的 I/O 系统调用上。</p>
+<p><img data-src="/images/EventHandlingMode/io_multiplexing.png" style="zoom: 55%"/></p>
+<p>在这种模型下，仅仅阻塞于 select 调用，等待数据报套接字变为可读，当
+select
+返回套接字可读这一条件时，再将所读数据从内核缓冲区复制到用户进程缓冲区。</p>
+<p><strong>在 I/O 复用的模型下，表面上看，有点类似于信号驱动式
+I/O，但是如果同时存在多个窗口，且在同一时刻多个窗口的厨师都按铃示意服务员，服务员错以为只有一个窗口的饭菜准备好了（Linux下信号不排队，即对于同一进程的同一信号只产生一次，直到该信号被处理后）。这也就是
+I/O 复用和信号驱动式 I/O 的一个不同点，I/O
+复用可以同时等待多个描述符就绪，也就是说，每个窗口的铃声各不相同，即使同一时刻有多份饭菜准备就绪，服务员也可以明确的知道是哪几个窗口的饭菜准备就绪。另一个不同点在于，I/O
+复用模型下，程序还是会阻塞于 select 调用，而信号驱动式 I/O
+在有数据之前程序可以去做其他的事情。</strong></p>
+<h3 id="异步-io">5. 异步 I/O</h3>
+<p>异步 I/O 由 POSIX
+规范定义。一般来说，这些函数的工作机制是：告知内核启动某个操作，并让内核在整个操作（包括将数据从内核复制到用户空间的缓冲区）完成后通知相应进程。</p>
+<p>该模型与信号驱动式 I/O 模型的不同点在于，信号驱动式 I/O
+是由内核通知我们何时可以启动一个 I/O 操作，而异步 I/O
+模型是由内核通知我们 I/O 操作何时完成。</p>
+<p><img data-src="/images/EventHandlingMode/async_io.png" style="zoom: 55%"/></p>
+<p><strong>在异步 I/O
+模型下，服务员无需理会饭菜就绪以及端菜问题，当厨师将饭菜做好之后，他直接将饭菜端到顾客面前。</strong></p>
+<h3 id="io-模型比较">6. I/O 模型比较</h3>
+<p>综上所述，不难发现，前 4
+种模型的主要区别在于第一阶段，即饭菜就绪阶段，因为它们的第二阶段是相同的，都是服务员将饭菜端到顾客面前（即将数据从内核空间复制到用户空间中）。相反，在异步
+I/O 模型中，这两个阶段都要进行处理，从而不同于其他 4 种模型。</p>
+<p>POSIX 把这两个术语定义如下：</p>
+<ul>
+<li><strong>同步 I/O 操作</strong>：导致请求进程阻塞，直到 I/O
+操作完成。</li>
+<li><strong>异步 I/O 操作</strong>：不导致请求进程阻塞。</li>
+</ul>
+<p>简单来说，就是同步 I/O 操作向用户进程通知的是 I/O 就绪事件，而异步
+I/O 操作向用户进程通知的是 I/O 完成事件。</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">I/O 模型</th>
+<th style="text-align: left;">读写操作和阻塞阶段</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">阻塞 I/O</td>
+<td style="text-align: left;">程序阻塞于读写函数</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">非阻塞 I/O</td>
+<td
+style="text-align: left;">程序不阻塞于读写函数，但是轮询可读/可写事件</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">信号驱动式 I/O</td>
+<td
+style="text-align: left;">信号触发读写就绪事件，用户程序执行读写操作，程序没有阻塞阶段</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">I/O 复用</td>
+<td style="text-align: left;">程序阻塞于 I/O
+复用系统调用，但可同时监听多个 I/O 事件。对 I/O
+本身的读写操作是非阻塞的</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">异步 I/O</td>
+<td
+style="text-align: left;">内核执行读写操作并触发读写完成事件，程序没有阻塞阶段</td>
+</tr>
+</tbody>
+</table>
+<p>上方所描述的前 4 中 I/O 模型，即阻塞式 I/O、非阻塞式 I/O、I/O
+复用以及信号驱动式 I/O 都属于同步 I/O 模型，因为其中真正的 I/O
+操作将阻塞进程，而只有异步 I/O 模型与 POSIX 定义的异步 I/O 相匹配。</p>
+<h2 id="事件处理模式">事件处理模式</h2>
+<p>常见的事件处理模式分为两种：Reactor 模式和 Proactor 模式。其中，同步
+I/O 模型通常用于实现 Reactor 模式，异步 I/O 模型则用于实现 Proactor
+模式。</p>
+<h3 id="reactor-模式">1. Reactor 模式</h3>
+<p>各线程的任务如下：</p>
+<ul>
+<li><strong>主线程</strong>：只负责监听文件描述符上是否有事件发生，如果有则将该事件通知给工作线程</li>
+<li><strong>工作线程</strong>：接受连接，读写数据，处理客户请求</li>
+</ul>
+<p>该模式的工作流程如下：</p>
+<ol type="1">
+<li>主线程往 epoll 内核事件表中注册 socket 上的读就绪事件；</li>
+<li>主线程调用 epoll_wait 等待 socket 上有数据可读；</li>
+<li>当 socket 上有数据可读时，epoll_wait 通知主线程，主线程则将 socket
+可读事件放入请求队列；</li>
+<li>睡眠在请求队列上的某个工作线程被唤醒，它从 socket
+读取数据，并处理客户请求，然后往 epoll 内核事件表中注册该 socket
+上的写就绪事件；</li>
+<li>主线程调用 epoll_wait 等待 socket 可写；</li>
+<li>当 socket 可写时，epoll_wait 通知主线程，主线程将 socket
+可写事件放入请求队列；</li>
+<li>睡眠在请求队列上的某个工作线程被唤醒，它往 socket
+上写入服务器处理客户请求的结果。</li>
+</ol>
+<p><img data-src="/images/EventHandlingMode/reactor_model.png" style="zoom: 55%"/></p>
+<p>该过程类似于如下过程：</p>
+<p><strong>饭店老板（主线程）将订单传递给厨师（注册读就绪事件），厨师做好饭菜后，按铃通知老板饭菜已经准备就绪（epoll_wait
+通知主线程有数据可读），老板将做好的饭菜放在工作台上（将可读事件放入请求队列），如果有空闲的服务员，则从工作台取走饭菜（工作线程处理客户请求）。</strong></p>
+<p><strong>服务员将饭菜递给客户后，通知老板送餐完成（注册写就绪事件），当顾客吃完后，老板看到（epoll_wait
+通知主线程有数据可写），老板则通知服务员打扫卫生（将可写事件放入请求队列），如果存在空闲的服务员，就过去打扫卫生，清理空盘子（工作线程处理客户请求）。</strong></p>
+<h3 id="proactor-模式">2. Proactor 模式</h3>
+<p>各线程的任务如下：</p>
+<ul>
+<li><strong>主线程</strong>：I/O 操作</li>
+<li><strong>工作线程</strong>：仅仅处理业务逻辑</li>
+</ul>
+<p>该模式的工作流程如下：</p>
+<ol type="1">
+<li>主线程调用 aio_read 函数向内核注册 socket
+上的读完成事件，并告诉内核用户读缓冲区的位置，以及读操作完成时如何通知应用程序；</li>
+<li>主线程继续处理其他逻辑；</li>
+<li>当 socket
+上的数据被读入用户缓冲区之后，内核向应用程序发送一个信号，以通知应用程序数据已经可用；</li>
+<li>应用程序预先定义好的信号处理函数选择一个工作线程来处理客户请求。工作线程处理完客户请求之后，调用
+aio_write 函数向内核注册 socket
+上的写完成事件，并告诉内核用户写缓冲区的位置，以及写操作完成时如何通知应用程序；</li>
+<li>主线程继续处理其他逻辑；</li>
+<li>当用户缓冲区的数据被写入 socket
+之后，内核将向应用程序发送一个信号，以通知应用程序数据已经发送完毕；</li>
+<li>应用程序预先定义好的信号处理函数选择一个工作线程来做善后处理，比如决定是否关闭
+socket。</li>
+</ol>
+<p><img data-src="/images/EventHandlingMode/proactor_io.png" style="zoom: 55%"/></p>
+<p>该过程类似于如下过程：</p>
+<p><strong>饭店老板（主线程）将订单传递给厨师（注册读完成事件）同时告知它做好饭菜后，将其放到工作台上（告诉内核用户读缓冲区的位置）。完成之后，老板玩自己的手机（处理其他逻辑）。等到厨师做好饭菜同时将其放到工作台上后，告诉老板饭菜已经准备就绪（通知主线程读完成事件），同时听到响铃声的空闲服务员从工作台取走饭菜（信号处理函数选择工作线程处理客户请求）。</strong></p>
+<p><strong>服务员将饭菜递给客户后，告诉顾客用餐完成后将空盘放到工作台即可（告诉内核写缓冲区的位置）。而老板则玩自己的手机（处理其他逻辑）。客户就餐完成后，将空盘放到工作台，同时通知老板打扫卫生（通知应用程序写完成事件）。此时，空闲的服务员则来工作台前取走空盘进行洗涤（工作线程做善后处理）。</strong></p>
+<h3 id="模拟-proactor-模式">3. 模拟 Proactor 模式</h3>
+<p>可以通过如下方式以同步 I/O 方式来模拟出 Proactor
+模式：主线程执行数据读写操作，读写完成之后，主线程向工作线程通知 “
+读写完成事件
+”。那么从工作线程的角度来看，它们就直接获得了数据读写的结果，接下来要做的知识对读写的结果进行逻辑处理。</p>
+<p>其工作流程如下：</p>
+<ol type="1">
+<li>主线程往 epoll 内核事件表中注册 socket 上的读就绪事件；</li>
+<li>主线程调用 epoll_wait 等待 socket 上有数据可读；</li>
+<li>当 socket 上有数据可读时，epoll_wait 通知主线程。主线程从 socket
+循环读取数据，直到没有更多数据可读，然后将读取到的数据封装成一个请求对象并插入请求队列；</li>
+<li>睡眠在请求队列上的某个工作线程给唤醒，它获得请求对象并处理客户请求，然后往
+epoll 内核事件表中注册 socket 上的写就绪事件；</li>
+<li>主线程调用 epoll_wait 等待 socket 可写；</li>
+<li>当 socket 可写时，epoll_wait 通知主线程。主线程往 socket
+上写入服务器处理客户请求的结果。</li>
+</ol>
+<p><img data-src="/images/EventHandlingMode/simulation_proactor_model.png" style="zoom: 45%"/></p>
+<p>该过程类似于如下过程：</p>
+<p><strong>饭店老板（主线程）将订单传递给厨师（注册读就绪事件），厨师做好饭菜后，按铃通知老板饭菜准备就绪（epoll_wait
+通知主线程有数据可读）。老板看到有空闲的服务员后，将饭菜直接递给服务员（唤醒工作线程，处理客户请求）。</strong></p>
+<p><strong>服务员将饭菜递给客户后，等到客户就餐完成后，老板看到（epoll_wait
+通知主线程可写）。老板则自己过去收拾空盘子，打扫卫生（主线程往 socket
+上写入服务器处理客户请求的结果）。</strong></p>
+<h2 id="并发模式">并发模式</h2>
+<p>常见的应用程序分为两种：<strong>I/O
+密集型</strong>和<strong>计算密集型</strong>。如果程序是 I/O
+密集型的，比如读写文件、访问数据库等，那么 I/O 操作的速度远远没有 CPU
+的计算速度，因此让程序阻塞于 I/O 操作将浪费大量的 CPU 时间。</p>
+<p>如果程序有多个执行线程，则当前被 I/O 操作所阻塞的执行线程可以主动放弃
+CPU（或者由操作系统来调度），并将执行权转移到其他线程。这样一来，就会显著提升
+CPU 的利用率。</p>
+<p>从实现上来说，并发编程的实现方式分为<strong>多线程</strong>和<strong>多进程</strong>两种方式。而并发模式是指
+I/O
+处理单元和多个逻辑单元之间协调完成任务的方法。常见的并发编程模式分为：<strong>半同步/半异步模式</strong>和<strong>领导者/追随者模式</strong>。</p>
+<h3 id="半同步半异步模式">1. 半同步/半异步模式</h3>
+<p>这里所说的 “ 同步 ” 和 “ 异步 ”
+与上文中提到的并非同一概念，其对比如下：</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">I/O 模型</th>
+<th style="text-align: left;">并发模式</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">同步</td>
+<td style="text-align: left;">内核向应用程序通知的是 I/O 就绪事件</td>
+<td style="text-align: left;">程序按照代码的顺序执行方式执行</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">异步</td>
+<td style="text-align: left;">内核向应用程序通知的是 I/O 完成事件</td>
+<td
+style="text-align: left;">程序需要借助中断、信号等系统事件来驱动</td>
+</tr>
+</tbody>
+</table>
+<p><img data-src="/images/EventHandlingMode/sync_async.png" style="zoom: 45%"/></p>
+<p>同步线程和异步线程的比较如下：</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">同步线程</th>
+<th style="text-align: left;">异步线程</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">优点</td>
+<td style="text-align: left;">逻辑简单</td>
+<td style="text-align: left;">执行效率高，实时性强</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">缺点</td>
+<td style="text-align: left;">效率较低，实时性较差</td>
+<td style="text-align: left;">难于调试和扩展</td>
+</tr>
+</tbody>
+</table>
+<p>经过上述比较，可以看出，对于服务器这种既要求较好的实时性，又要求能同时处理多个客户请求的应用程序，就需要使用同步线程和异步线程来实现，即采用半同步/半异步的方式来实现。</p>
+<p>在该模式下，同步线程用于处理客户逻辑，而异步线程用于处理 I/O
+事件。</p>
+<p>其过程如下：异步线程监听到客户请求后，就将其封装成请求对象并插入请求队列中。请求队列将通知某个工作在同步模式下的工作线程来读取并处理该请求对象。具体选择哪个工作线程来为新的客户请求服务，则取决于请求队列的设计。</p>
+<p>如果结合考虑两种事件处理模式（Reactor 模式和 Proactor
+模式），那么半同步/半异步模式就存在一种变体形式，称为<strong>半同步/半反应堆</strong>模式。</p>
+<p><img data-src="/images/EventHandlingMode/semi_sync_semi_reactor_1.png" style="zoom: 45%"/></p>
+<p>其中，只有主线程是异步线程，它负责监听所有 socket 上的事件。如果监听
+socket
+上有可读事件发送，即有新的连接请求到来，那么主线程就接受该连接，然后往
+epoll 内核事件表中注册该 socket 上的读写事件。如果连接 socket
+上有读写事件发生，主线程就将该连接 socket
+插入到请求队列中。所有的工作线程都睡眠在请求队列上，当任务到来时，它们将通过竞争获得任务的接管权，例如通过申请互斥锁。</p>
+<p>在上述例子中，主线程放入请求队列中的是 I/O
+就绪事件，为此，其采用的事件处理模式是 Reactor
+模式。我们也可以使用模拟的 Proactor
+事件处理模式，即由主线程来完成数据的读写，向请求队列放入 I/O
+完成事件。在这种情况下，主线程一般会将应用程序数据、任务类型等信息封装成一个任务对象，然后将其插入请求队列中。工作线程从请求队列中取得任务对象之后，便可直接处理之，而无需执行读写操作了。</p>
+<p>半同步/半反应堆模式存在如下缺点：</p>
+<ol type="1">
+<li>主线程和工作线程共享请求队列。取出任务或者添加任务时，都需要加锁保护，浪费
+CPU 时间；</li>
+<li>每个工作线程在同一时刻只能处理一个客户请求。如果客户数量较多，工作线程较少，请求队列中堆积了大量任务对象，这会导致客户端的响应速度越来越慢。如果增加工作线程，工作线程间的切换也会浪费大量的
+CPU 时间。</li>
+</ol>
+<p>而下图所示是一种相对高效的半同步/半异步模式，每个工作线程都能同时处理多个客户连接。</p>
+<p><img data-src="/images/EventHandlingMode/semi_sync_semi_reactor_2.png" style="zoom: 45%"/></p>
+<p>其中，主线程只负责监听 socket，而连接 socket
+的工作则交给工作线程来完成。当有新的连接到来时，主线程就接受之并将该连接派发给某个工作线程，此后该
+socket 上的任何 I/O
+操作都由被选中的工作线程来处理，直到客户关闭连接。</p>
+<p>可见，每个线程都维持自己的事件循环，它们各自独立地监听不同的事件，因此在这种半同步/半异步模式下，每个线程都工作在异步模式下，所以它并非严格意义上的半同步/半异步模式。</p>
+<h3 id="领导者追随者模式">2. 领导者/追随者模式</h3>
+<p>领导者/追溯者模式是多个工作线程轮流获得事件源集合，轮流监听、分发并处理事件的一种模式。</p>
+<p>在任意时间点，程序都仅有一个领导者线程，它负责监听 I/O
+事件。而其他线程则都是追随者，它们休眠在线程池中等待成为新的领导者。当前的领导者如果检测到
+I/O 事件，首先要从线程池中推选出新的领导者线程，然后处理 I/O
+事件。此时，新的领导者等待新的 I/O 事件，而原来的领导者则处理 I/O
+事件，二者实现了并发。</p>
+<p><img data-src="/images/EventHandlingMode/leader_follower.png" style="zoom: 60%"/></p>
+]]></content>
+      <categories>
+        <category>服务器</category>
+      </categories>
+      <tags>
+        <tag>Linux</tag>
+        <tag>Reactor</tag>
+        <tag>Proactor</tag>
       </tags>
   </entry>
 </search>
